@@ -58,8 +58,8 @@ func (c *Client) Build(artifactPath, sourceDir string, ignorePaths []string) (er
 	domain := strings.Split(filepath.Clean(absDir), string(filepath.Separator))
 	ps := sourceignore.ReadPatterns(strings.NewReader(ignore), domain)
 	matcher := sourceignore.NewMatcher(ps)
-	filter := func(p string, fi os.FileInfo) bool {
-		return matcher.Match(strings.Split(p, string(filepath.Separator)), fi.IsDir())
+	filter := func(p string, di os.DirEntry) bool {
+		return matcher.Match(strings.Split(p, string(filepath.Separator)), di.IsDir())
 	}
 
 	sz := &writeCounter{}
@@ -67,20 +67,26 @@ func (c *Client) Build(artifactPath, sourceDir string, ignorePaths []string) (er
 
 	gw := gzip.NewWriter(mw)
 	tw := tar.NewWriter(gw)
-	if err := filepath.Walk(absDir, func(p string, fi os.FileInfo, err error) error {
+	if err := filepath.WalkDir(absDir, func(p string, di os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
+		ft := di.Type()
+
 		// Ignore anything that is not a file or directories e.g. symlinks
-		if m := fi.Mode(); !(m.IsRegular() || m.IsDir()) {
+		if !(ft.IsRegular() || ft.IsDir()) {
 			return nil
 		}
 
-		if len(ignorePaths) > 0 && filter(p, fi) {
+		if len(ignorePaths) > 0 && filter(p, di) {
 			return nil
 		}
 
+		fi, err := di.Info()
+		if err != nil {
+			return err
+		}
 		header, err := tar.FileInfoHeader(fi, p)
 		if err != nil {
 			return err
@@ -112,7 +118,7 @@ func (c *Client) Build(artifactPath, sourceDir string, ignorePaths []string) (er
 			return err
 		}
 
-		if !fi.Mode().IsRegular() {
+		if !ft.IsRegular() {
 			return nil
 		}
 		f, err := os.Open(p)
